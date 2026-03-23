@@ -11,6 +11,14 @@ It is built for apps where different users should have different access levels, 
 
 This project gives developers a starting point for building a structured permission layer instead of writing authorization logic again and again in every new application.
 
+## Documentation
+
+Detailed usage documentation is available in:
+
+- `docs/getting-started.md`
+- `docs/use-cases.md`
+- `docs/examples.md`
+
 ## What This Project Is
 
 This project is a reusable permission access system for backend-driven applications.
