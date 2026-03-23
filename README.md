@@ -62,14 +62,14 @@ Current project direction includes:
 
 ## How Others Can Use This Project
 
-There are three main ways to use this project.
+There are two main ways to use this project.
 
 ### 1. Clone the Repository
 
 Best for teams that want to customize the project directly.
 
 ```bash
-git clone https://github.com/your-org/permission-access-system.git
+git clone https://github.com/viven1426/permission-access-system.git
 ```
 
 This is useful when someone wants:
@@ -83,15 +83,7 @@ This is useful when someone wants:
 Best for teams that want to reuse the package without publishing it to npm first.
 
 ```bash
-npm install github:your-org/permission-access-system
-```
-
-### 3. Install From npm
-
-Best for public reuse and the easiest developer experience.
-
-```bash
-npm install permission-access-system
+npm install github:viven1426/permission-access-system
 ```
 
 ## How This Project Is Typically Used In an App
