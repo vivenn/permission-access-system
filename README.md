@@ -58,6 +58,7 @@ Current project direction includes:
 - support for access scopes like global, team, and owner
 - package-friendly structure for reuse across applications
 - GitHub-based sharing and optional npm publishing
+- step-by-step examples for common authorization patterns
 
 ## How Others Can Use This Project
 
@@ -137,6 +138,17 @@ Good future additions for the project:
 - sample applications
 - API middleware packages
 - documentation for real-world app patterns
+
+## Example Progression
+
+The project includes a step-by-step example flow so users can understand the package gradually:
+
+- `01-basic-rbac.ts` for simple role-based access
+- `02-own-scope.ts` for owner-only permissions
+- `03-team-scope.ts` for team-based access
+- `04-role-inheritance.ts` for inherited roles
+- `05-explicit-deny.ts` for deny rules with conditions
+- `crm-example.ts` for a more practical business-oriented scenario
 
 ## Project Positioning
 
