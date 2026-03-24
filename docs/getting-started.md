@@ -227,3 +227,5 @@ The repository also includes runnable example source files in:
 For a breakdown of what each example demonstrates, see `docs/examples.md`.
 
 For the public API details and decision structure, see `docs/api.md`.
+
+For request-level integration patterns, see `docs/middleware-integration.md`.

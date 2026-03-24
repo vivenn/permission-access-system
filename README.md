@@ -151,6 +151,7 @@ Project documentation is available in:
 - `docs/use-cases.md`
 - `docs/examples.md`
 - `docs/api.md`
+- `docs/middleware-integration.md`
 
 ## Included Examples
 
