@@ -64,6 +64,18 @@ export const accessControl = createAccessControl({
 });
 ```
 
+You can also create the engine with the class directly:
+
+```ts
+import { AccessControlEngine } from "permission-access-system";
+
+export const accessControl = new AccessControlEngine({
+  admin: {
+    permissions: [{ resource: "lead", action: "read", scope: "any" }]
+  }
+});
+```
+
 ## Step 2: Attach User Identity
 
 Your authentication middleware should attach user information to the request.
@@ -115,6 +127,31 @@ This is important for:
 
 ## Step 4: Create Permission Middleware
 
+The package provides a ready-made `requirePermission` adapter for Express-style middleware integration.
+
+### Option 1: Use The Exported Adapter
+
+```ts
+import { requirePermission } from "permission-access-system";
+
+app.get(
+  "/leads/:id",
+  loadLead,
+  requirePermission(accessControl, "lead", "read"),
+  handler
+);
+```
+
+This is the simplest option if your request object follows the package’s expected shape:
+
+- `req.auth.userId`
+- `req.auth.roles`
+- optional `req.auth.teamIds`
+- optional `req.record.ownerId`
+- optional `req.record.teamId`
+
+### Option 2: Create Custom Middleware
+
 The middleware should call `accessControl.can(...)` and either continue or reject the request.
 
 ```ts
@@ -149,9 +186,15 @@ export function requirePermission(resource: string, action: string) {
 }
 ```
 
+This option is useful when your application has:
+
+- a custom request shape
+- a different error response format
+- additional request context that should be included in checks
+
 ## Step 5: Use Middleware On Routes
 
-Example with Express:
+Example with Express using custom middleware:
 
 ```ts
 import express from "express";

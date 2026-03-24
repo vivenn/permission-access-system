@@ -49,6 +49,40 @@ import { createAccessControl } from "permission-access-system";
 
 If your application is still CommonJS-only, clone the repository and adapt it locally instead of installing it as a package dependency.
 
+## Main Ways To Create The Engine
+
+This package supports two equivalent ways to create the access-control engine.
+
+### Option 1: Use `createAccessControl`
+
+This is the simplest and recommended entry point for most users.
+
+```ts
+import { createAccessControl } from "permission-access-system";
+
+const accessControl = createAccessControl({
+  admin: {
+    permissions: [{ resource: "project", action: "read", scope: "any" }]
+  }
+});
+```
+
+### Option 2: Use `AccessControlEngine` Directly
+
+This is useful when you want to work with the class explicitly.
+
+```ts
+import { AccessControlEngine } from "permission-access-system";
+
+const accessControl = new AccessControlEngine({
+  admin: {
+    permissions: [{ resource: "project", action: "read", scope: "any" }]
+  }
+});
+```
+
+Both approaches create the same kind of engine and expose the same main methods.
+
 ## Basic Example
 
 ```ts
@@ -165,8 +199,13 @@ console.log(decision.allowed);
 
 ## Example: Express Middleware Style
 
+The package now includes an exported `requirePermission` adapter for Express-style middleware use cases.
+
 ```ts
-import { createAccessControl } from "permission-access-system";
+import {
+  createAccessControl,
+  requirePermission
+} from "permission-access-system";
 
 const accessControl = createAccessControl({
   admin: {
@@ -174,34 +213,14 @@ const accessControl = createAccessControl({
   }
 });
 
-export function requirePermission(resource: string, action: string) {
-  return (req, res, next) => {
-    const decision = accessControl.can({
-      user: {
-        id: req.auth.userId,
-        roleKeys: req.auth.roles,
-        teamIds: req.auth.teamIds
-      },
-      resource,
-      action,
-      resourceOwnerId: req.record?.ownerId,
-      resourceTeamId: req.record?.teamId,
-      resourceData: req.record
-    });
-
-    if (!decision.allowed) {
-      return res.status(403).json({
-        error: {
-          code: "FORBIDDEN",
-          message: decision.reason
-        }
-      });
-    }
-
-    next();
-  };
-}
+app.get(
+  "/users",
+  requirePermission(accessControl, "user", "manage"),
+  handler
+);
 ```
+
+You can still write a custom middleware wrapper if your application needs a different request shape or response format.
 
 ## Suggested Adoption Flow
 

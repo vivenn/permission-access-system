@@ -188,7 +188,7 @@ This project can be extended further with:
 - multi-tenant support
 - frontend permission helpers
 - framework-specific adapters
-- middleware packages
+- additional middleware adapters
 - sample app integrations
 - admin dashboards for permission management
 
