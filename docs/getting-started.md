@@ -1,205 +1,126 @@
 # Getting Started
 
-This guide explains how to use `permission-access-system` in your own application.
+This guide shows the fastest way to set up and use `permission-access-system` in an application.
 
-## When To Use This Project
+## 1. Install
 
-Use this project when your app needs to control:
-
-- who can access a resource
-- what action a user can perform
-- whether access should apply to all records, team records, or only owned records
-
-Typical examples:
-
-- admin and manager roles
-- team-based access
-- owner-based record access
-- protected backend APIs
-
-## Use The Project In Your App
-
-You can use the project in two main ways.
-
-### Clone And Customize
+Clone the repository:
 
 ```bash
 git clone https://github.com/viven1426/permission-access-system.git
 ```
 
-This approach is useful when you want to change the project structure or permission model directly.
-
-### Install From GitHub
+Or install from GitHub:
 
 ```bash
 npm install github:viven1426/permission-access-system
 ```
 
-This approach is useful when you want to consume it inside another Node.js application.
+## 2. Import The Package
 
-## Import Style
-
-This project currently uses an ESM package interface.
-
-Use imports like:
+This package is ESM-based.
 
 ```ts
 import { createAccessControl } from "permission-access-system";
 ```
 
-If your application is still CommonJS-only, clone the repository and adapt it locally instead of installing it as a package dependency.
-
-## Main Ways To Create The Engine
-
-This package supports two equivalent ways to create the access-control engine.
-
-### Option 1: Use `createAccessControl`
-
-This is the simplest and recommended entry point for most users.
-
-```ts
-import { createAccessControl } from "permission-access-system";
-
-const accessControl = createAccessControl({
-  admin: {
-    permissions: [{ resource: "project", action: "read", scope: "any" }]
-  }
-});
-```
-
-### Option 2: Use `AccessControlEngine` Directly
-
-This is useful when you want to work with the class explicitly.
+You can also use the class directly:
 
 ```ts
 import { AccessControlEngine } from "permission-access-system";
-
-const accessControl = new AccessControlEngine({
-  admin: {
-    permissions: [{ resource: "project", action: "read", scope: "any" }]
-  }
-});
 ```
 
-Both approaches create the same kind of engine and expose the same main methods.
+## 3. Define Roles And Permissions
 
-## Basic Example
+Start by defining the roles in your app.
 
 ```ts
-import { createAccessControl } from "permission-access-system";
-
-const accessControl = createAccessControl({
+const roleConfig = {
   admin: {
     permissions: [
-      { resource: "project", action: "read", scope: "any" },
-      { resource: "project", action: "create", scope: "any" },
-      { resource: "project", action: "update", scope: "any" },
-      { resource: "project", action: "delete", scope: "any" }
+      { resource: "lead", action: "read", scope: "any" },
+      { resource: "lead", action: "update", scope: "any" },
+      { resource: "user", action: "manage", scope: "any" }
     ]
   },
-  viewer: {
-    permissions: [{ resource: "project", action: "read", scope: "any" }]
-  }
-});
-
-const decision = accessControl.can({
-  user: {
-    id: "user_1",
-    roleKeys: ["viewer"]
-  },
-  resource: "project",
-  action: "read"
-});
-
-console.log(decision.allowed);
-```
-
-## Example: Owner-Based Access
-
-```ts
-import { createAccessControl } from "permission-access-system";
-
-const accessControl = createAccessControl({
-  author: {
-    permissions: [
-      { resource: "article", action: "read", scope: "own" },
-      { resource: "article", action: "update", scope: "own" }
-    ]
-  }
-});
-
-const decision = accessControl.can({
-  user: {
-    id: "user_25",
-    roleKeys: ["author"]
-  },
-  resource: "article",
-  action: "update",
-  resourceOwnerId: "user_25"
-});
-
-console.log(decision.allowed);
-```
-
-## Example: Team-Based Access
-
-```ts
-import { createAccessControl } from "permission-access-system";
-
-const accessControl = createAccessControl({
   manager: {
     permissions: [
       { resource: "lead", action: "read", scope: "team" },
       { resource: "lead", action: "update", scope: "team" }
     ]
+  },
+  sales_rep: {
+    permissions: [
+      { resource: "lead", action: "read", scope: "own" },
+      { resource: "lead", action: "update", scope: "own" }
+    ]
   }
-});
+};
+```
 
+## 4. Create The Access Control Engine
+
+Recommended:
+
+```ts
+const accessControl = createAccessControl(roleConfig);
+```
+
+Equivalent class-based form:
+
+```ts
+const accessControl = new AccessControlEngine(roleConfig);
+```
+
+## 5. Run A Permission Check
+
+```ts
 const decision = accessControl.can({
   user: {
-    id: "manager_1",
-    roleKeys: ["manager"],
-    teamIds: ["team_west"]
+    id: "user_1",
+    roleKeys: ["sales_rep"]
   },
   resource: "lead",
   action: "update",
-  resourceTeamId: "team_west"
+  resourceOwnerId: "user_1"
 });
-
-console.log(decision.allowed);
 ```
 
-## Example: Role Inheritance
+Decision result:
 
 ```ts
-import { createAccessControl } from "permission-access-system";
-
-const accessControl = createAccessControl({
-  member: {
-    permissions: [{ resource: "task", action: "read", scope: "own" }]
-  },
-  editor: {
-    inherits: ["member"],
-    permissions: [{ resource: "task", action: "update", scope: "own" }]
-  }
-});
-
-const decision = accessControl.can({
-  user: {
-    id: "user_10",
-    roleKeys: ["editor"]
-  },
-  resource: "task",
-  action: "read",
-  resourceOwnerId: "user_10"
-});
-
-console.log(decision.allowed);
+{
+  allowed: true,
+  reason: "Access allowed.",
+  matchedScopes: ["own"]
+}
 ```
 
-## Example: Express Middleware Style
+## 6. Choose The Right Scope
 
-The package now includes an exported `requirePermission` adapter for Express-style middleware use cases.
+Use `any` when the resource is globally accessible for that role.
+
+```ts
+{ resource: "report", action: "read", scope: "any" }
+```
+
+Use `own` when the resource belongs to one user.
+
+```ts
+{ resource: "lead", action: "update", scope: "own" }
+```
+
+Use `team` when the resource belongs to a team.
+
+```ts
+{ resource: "lead", action: "read", scope: "team" }
+```
+
+## 7. Use It In Middleware
+
+If your app is request-based, integrate it in middleware after authentication and after loading the target record.
+
+Built-in adapter:
 
 ```ts
 import {
@@ -207,44 +128,70 @@ import {
   requirePermission
 } from "permission-access-system";
 
-const accessControl = createAccessControl({
-  admin: {
-    permissions: [{ resource: "user", action: "manage", scope: "any" }]
-  }
-});
+const accessControl = createAccessControl(roleConfig);
 
 app.get(
-  "/users",
-  requirePermission(accessControl, "user", "manage"),
+  "/leads/:id",
+  loadLead,
+  requirePermission(accessControl, "lead", "read"),
   handler
 );
 ```
 
-You can still write a custom middleware wrapper if your application needs a different request shape or response format.
+For the full middleware flow, see `docs/middleware-integration.md`.
 
-## Suggested Adoption Flow
+## Configuration Checklist
 
-If you are adding this project to an application, use this order:
+Before using this package in an app, decide:
 
-1. define your application roles
-2. define your protected resources and actions
-3. decide whether access is global, team-based, or owner-based
-4. connect user identity from authentication
-5. use permission checks in APIs and service logic
+1. what resources exist in the app
+2. what actions are allowed on each resource
+3. which roles exist
+4. whether each resource uses `any`, `own`, or `team` scope
+5. whether any actions need conditional deny rules
 
-## Related Example Files
+## Common Patterns
 
-The repository also includes runnable example source files in:
+Owner-based access:
 
-- `src/examples/01-basic-rbac.ts`
-- `src/examples/02-own-scope.ts`
-- `src/examples/03-team-scope.ts`
-- `src/examples/04-role-inheritance.ts`
-- `src/examples/05-explicit-deny.ts`
-- `src/examples/crm-example.ts`
+```ts
+accessControl.can({
+  user: { id: "user_1", roleKeys: ["author"] },
+  resource: "article",
+  action: "update",
+  resourceOwnerId: "user_1"
+});
+```
 
-For a breakdown of what each example demonstrates, see `docs/examples.md`.
+Team-based access:
 
-For the public API details and decision structure, see `docs/api.md`.
+```ts
+accessControl.can({
+  user: {
+    id: "manager_1",
+    roleKeys: ["manager"],
+    teamIds: ["team_west"]
+  },
+  resource: "lead",
+  action: "read",
+  resourceTeamId: "team_west"
+});
+```
 
-For request-level integration patterns, see `docs/middleware-integration.md`.
+Conditional deny:
+
+```ts
+{
+  resource: "invoice",
+  action: "refund",
+  scope: "any",
+  effect: "deny",
+  condition: ({ resource }) => resource?.status === "locked"
+}
+```
+
+## Next Docs
+
+- `docs/api.md`
+- `docs/middleware-integration.md`
+- `docs/examples.md`

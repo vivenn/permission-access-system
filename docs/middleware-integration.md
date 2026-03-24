@@ -1,41 +1,30 @@
 # Middleware Integration
 
-This guide explains how to use `permission-access-system` inside request middleware so an application can allow or block incoming requests based on roles, scopes, and resource ownership.
+This guide shows how to use `permission-access-system` in request middleware.
 
-## Why Middleware Integration Matters
+## Request Flow
 
-In most backend applications, authorization happens while handling an incoming request.
+Recommended order:
 
-Typical example:
+1. authenticate the user
+2. attach user identity to the request
+3. load the target record if needed
+4. run permission middleware
+5. continue to the handler or return `403`
 
-1. the user sends a request
-2. the app authenticates the user
-3. the app loads the target resource
-4. the app checks whether the user can perform the requested action
-5. the app either allows the request or returns `403 Forbidden`
+## Required Request Context
 
-This package is designed to be the decision layer in that flow.
+The built-in adapter expects:
 
-## Typical Request Flow
+- `req.auth.userId`
+- `req.auth.roles`
+- optional `req.auth.teamIds`
+- optional `req.record.ownerId`
+- optional `req.record.teamId`
 
-The usual middleware order looks like this:
+If your app uses a different request shape, write a custom middleware wrapper.
 
-1. authentication middleware
-2. resource-loading middleware
-3. permission middleware
-4. route handler or controller
-
-That order matters because the permission check often needs:
-
-- the current user
-- the requested resource type
-- the action being attempted
-- the target record owner
-- the target record team
-
-## Step 1: Create The Access Control Instance
-
-Create the permission engine once and reuse it across the application.
+## Step 1: Create The Engine
 
 ```ts
 import { createAccessControl } from "permission-access-system";
@@ -44,9 +33,7 @@ export const accessControl = createAccessControl({
   admin: {
     permissions: [
       { resource: "lead", action: "read", scope: "any" },
-      { resource: "lead", action: "update", scope: "any" },
-      { resource: "lead", action: "delete", scope: "any" },
-      { resource: "user", action: "manage", scope: "any" }
+      { resource: "lead", action: "update", scope: "any" }
     ]
   },
   manager: {
@@ -64,23 +51,7 @@ export const accessControl = createAccessControl({
 });
 ```
 
-You can also create the engine with the class directly:
-
-```ts
-import { AccessControlEngine } from "permission-access-system";
-
-export const accessControl = new AccessControlEngine({
-  admin: {
-    permissions: [{ resource: "lead", action: "read", scope: "any" }]
-  }
-});
-```
-
-## Step 2: Attach User Identity
-
-Your authentication middleware should attach user information to the request.
-
-Example:
+## Step 2: Attach Auth Context
 
 ```ts
 export function attachAuth(req, res, next) {
@@ -94,17 +65,9 @@ export function attachAuth(req, res, next) {
 }
 ```
 
-The permission system expects the application to provide:
+## Step 3: Load The Record
 
-- user id
-- role list
-- optional team ids
-
-## Step 3: Load The Target Resource
-
-If access depends on record ownership or team ownership, load the resource before the permission middleware runs.
-
-Example:
+Only do this if your permission depends on owner, team, or record state.
 
 ```ts
 export function loadLead(req, res, next) {
@@ -119,17 +82,7 @@ export function loadLead(req, res, next) {
 }
 ```
 
-This is important for:
-
-- own-scope checks
-- team-scope checks
-- conditional permission rules
-
-## Step 4: Create Permission Middleware
-
-The package provides a ready-made `requirePermission` adapter for Express-style middleware integration.
-
-### Option 1: Use The Exported Adapter
+## Step 4: Use The Built-In Adapter
 
 ```ts
 import { requirePermission } from "permission-access-system";
@@ -142,43 +95,92 @@ app.get(
 );
 ```
 
-This is the simplest option if your request object follows the package’s expected shape:
+The adapter:
 
-- `req.auth.userId`
-- `req.auth.roles`
-- optional `req.auth.teamIds`
-- optional `req.record.ownerId`
-- optional `req.record.teamId`
+- builds an `AccessCheck`
+- runs `accessControl.can(...)`
+- returns `403` if denied
+- calls `next()` if allowed
 
-### Option 2: Create Custom Middleware
-
-The middleware should call `accessControl.can(...)` and either continue or reject the request.
+## Full Example
 
 ```ts
-import { accessControl } from "./access-control";
+import express from "express";
+import {
+  createAccessControl,
+  requirePermission
+} from "permission-access-system";
 
-export function requirePermission(resource: string, action: string) {
+const app = express();
+
+const accessControl = createAccessControl({
+  manager: {
+    permissions: [
+      { resource: "lead", action: "read", scope: "team" }
+    ]
+  }
+});
+
+function attachAuth(req, res, next) {
+  req.auth = {
+    userId: "manager_1",
+    roles: ["manager"],
+    teamIds: ["team_west"]
+  };
+
+  next();
+}
+
+function loadLead(req, res, next) {
+  req.record = {
+    id: req.params.id,
+    ownerId: "rep_2",
+    teamId: "team_west"
+  };
+
+  next();
+}
+
+app.use(attachAuth);
+
+app.get(
+  "/leads/:id",
+  loadLead,
+  requirePermission(accessControl, "lead", "read"),
+  (req, res) => {
+    res.json(req.record);
+  }
+);
+```
+
+## When To Write Custom Middleware
+
+Write your own wrapper when:
+
+- request fields use different names
+- you want a custom error response
+- you need extra check data in `resourceData`
+
+Example:
+
+```ts
+export function requireLeadUpdate(accessControl) {
   return (req, res, next) => {
     const decision = accessControl.can({
       user: {
-        id: req.auth.userId,
-        roleKeys: req.auth.roles,
-        teamIds: req.auth.teamIds
+        id: req.user.id,
+        roleKeys: req.user.roles,
+        teamIds: req.user.teams
       },
-      resource,
-      action,
-      resourceOwnerId: req.record?.ownerId,
-      resourceTeamId: req.record?.teamId,
-      resourceData: req.record
+      resource: "lead",
+      action: "update",
+      resourceOwnerId: req.lead.ownerUserId,
+      resourceTeamId: req.lead.salesTeamId,
+      resourceData: req.lead
     });
 
     if (!decision.allowed) {
-      return res.status(403).json({
-        error: {
-          code: "FORBIDDEN",
-          message: decision.reason
-        }
-      });
+      return res.status(403).json({ message: decision.reason });
     }
 
     next();
@@ -186,102 +188,13 @@ export function requirePermission(resource: string, action: string) {
 }
 ```
 
-This option is useful when your application has:
+## Middleware Responsibility
 
-- a custom request shape
-- a different error response format
-- additional request context that should be included in checks
+Middleware should do request-level access control.
 
-## Step 5: Use Middleware On Routes
+Service logic can still do deeper business checks when needed.
 
-Example with Express using custom middleware:
+Good split:
 
-```ts
-import express from "express";
-import { attachAuth } from "./auth-middleware";
-import { loadLead } from "./load-lead";
-import { requirePermission } from "./require-permission";
-
-const app = express();
-
-app.use(attachAuth);
-
-app.get(
-  "/leads/:id",
-  loadLead,
-  requirePermission("lead", "read"),
-  (req, res) => {
-    res.json(req.record);
-  }
-);
-
-app.patch(
-  "/leads/:id",
-  loadLead,
-  requirePermission("lead", "update"),
-  (req, res) => {
-    res.json({ success: true });
-  }
-);
-```
-
-## What The Middleware Is Responsible For
-
-This permission middleware is responsible for:
-
-- translating request context into a permission check
-- blocking unauthorized requests
-- allowing authorized requests to continue
-- returning a consistent `403` response when access is denied
-
-## What It Should Not Be Responsible For
-
-The middleware should not contain all business logic.
-
-Keep it focused on access control.
-
-Business-specific validation can still happen later in services or use cases.
-
-Examples:
-
-- middleware decides whether a user can update a lead
-- service logic decides whether that lead can move to a specific status
-
-## When To Use Route Middleware
-
-Route middleware is a good fit for:
-
-- protecting REST endpoints
-- protecting admin routes
-- protecting CRUD operations
-- applying broad permission checks early
-
-## When To Add Service-Level Checks Too
-
-Middleware alone is not always enough.
-
-Use additional checks in the service layer when:
-
-- the rule depends on business state
-- the rule depends on more than one resource
-- the action is sensitive and should be enforced deeper in the app
-- background jobs or internal services can trigger the same logic
-
-## Recommended Pattern
-
-Use both layers:
-
-- middleware for request-level authorization
-- service checks for deeper business rules
-
-That keeps the access model safer and easier to maintain.
-
-## Summary
-
-To control requests with this package:
-
-1. authenticate the user
-2. attach user roles and team data to the request
-3. load the target resource if scope or ownership matters
-4. call `accessControl.can(...)` in middleware
-5. allow or deny the request based on the decision
+- middleware decides whether the request may proceed
+- services decide whether the business action is valid

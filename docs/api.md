@@ -1,25 +1,8 @@
 # API Guide
 
-This document describes the public API exposed by `permission-access-system`.
-
-## Module Format
-
-The project currently exposes an ESM package interface.
-
-Use it with:
-
-```ts
-import { createAccessControl } from "permission-access-system";
-```
-
-If your application is still CommonJS-based, you should either:
-
-- migrate the integration point to ESM
-- clone the repository and adapt it to your project setup
+This document explains the package API, the configuration shape, and the runtime fields used during permission checks.
 
 ## Main Exports
-
-The package exposes:
 
 - `AccessControlEngine`
 - `createAccessControl`
@@ -27,92 +10,43 @@ The package exposes:
 - `resolveUserPermissions`
 - `requirePermission`
 
-## createAccessControl
+## Engine Creation
 
-Creates an access-control instance from a role definition object.
+Factory form:
 
 ```ts
-const accessControl = createAccessControl({
-  admin: {
-    permissions: [{ resource: "project", action: "read", scope: "any" }]
-  }
-});
+import { createAccessControl } from "permission-access-system";
+
+const accessControl = createAccessControl(roleConfig);
 ```
 
-The returned object includes:
-
-- `can(check)`
-- `getPermissions(roleKeys)`
-
-Internally, `createAccessControl(...)` returns an `AccessControlEngine` instance.
-
-## AccessControlEngine
-
-This is the class-based engine that owns the role configuration and exposes the main authorization API.
-
-Example:
+Class form:
 
 ```ts
 import { AccessControlEngine } from "permission-access-system";
 
-const accessControl = new AccessControlEngine({
-  admin: {
-    permissions: [{ resource: "project", action: "read", scope: "any" }]
-  }
-});
+const accessControl = new AccessControlEngine(roleConfig);
 ```
 
-Main methods:
+Both give you the same engine behavior.
 
-- `can(check)`
-- `getPermissions(roleKeys)`
-- `getRoles()`
+## Engine Methods
 
-## accessControl.can(check)
+### `can(check)`
 
-Evaluates whether a user can perform an action on a resource.
+Runs a permission check and returns an `AccessDecision`.
 
-Example:
+### `getPermissions(roleKeys)`
 
-```ts
-const decision = accessControl.can({
-  user: {
-    id: "user_1",
-    roleKeys: ["admin"],
-    teamIds: ["team_a"]
-  },
-  resource: "project",
-  action: "read",
-  resourceOwnerId: "user_1",
-  resourceTeamId: "team_a",
-  resourceData: {
-    id: "project_10",
-    status: "active"
-  }
-});
-```
+Returns the final flattened permission list for the given roles.
 
-## Decision Shape
+### `getRoles()`
 
-The result of a permission check looks like this:
+Returns the stored role configuration.
 
-```ts
-{
-  allowed: true,
-  reason: "Access allowed.",
-  matchedScopes: ["any"]
-}
-```
+## Role Definition
 
-Fields:
-
-- `allowed`: whether access is granted
-- `reason`: explanation of the decision
-- `matchedScopes`: the scopes that matched the request
-
-## Role Definition Shape
-
-Each role can define:
+Each role has:
 
 - `permissions`
 - optional `inherits`
@@ -121,19 +55,23 @@ Example:
 
 ```ts
 {
-  member: {
-    permissions: [{ resource: "task", action: "read", scope: "own" }]
+  manager: {
+    permissions: [
+      { resource: "lead", action: "read", scope: "team" }
+    ]
   },
-  editor: {
-    inherits: ["member"],
-    permissions: [{ resource: "task", action: "update", scope: "own" }]
+  admin: {
+    inherits: ["manager"],
+    permissions: [
+      { resource: "user", action: "manage", scope: "any" }
+    ]
   }
 }
 ```
 
-## Permission Grant Shape
+## Permission Grant
 
-Each permission can define:
+Each permission can include:
 
 - `resource`
 - `action`
@@ -153,27 +91,151 @@ Example:
 }
 ```
 
-## Supported Scopes
+## Scopes
 
-Supported scopes are:
+Supported scopes:
 
 - `any`
-- `team`
 - `own`
+- `team`
 
-## Validation Behavior
+Meaning:
 
-The package validates role definitions when `createAccessControl` is called.
+- `any`: no ownership or team restriction
+- `own`: user id must match the resource owner id
+- `team`: resource team id must match one of the user team ids
 
-It throws errors when:
+## Access Check Shape
 
-- a role inherits from a role that does not exist
+`can(check)` expects:
+
+```ts
+{
+  user: {
+    id: "user_1",
+    roleKeys: ["manager"],
+    teamIds: ["team_west"]
+  },
+  resource: "lead",
+  action: "update",
+  resourceOwnerId: "user_7",
+  resourceTeamId: "team_west",
+  resourceData: {
+    id: "lead_1",
+    status: "open"
+  }
+}
+```
+
+## Access Check Fields
+
+### `resource`
+
+The type of thing being protected.
+
+Examples:
+
+- `lead`
+- `invoice`
+- `user`
+- `task`
+- `report`
+
+This field is required.
+
+### `action`
+
+The operation being attempted.
+
+Examples:
+
+- `read`
+- `create`
+- `update`
+- `delete`
+- `manage`
+- `refund`
+
+This field is required.
+
+### `resourceOwnerId`
+
+The user id of the record owner.
+
+Use this when the permission uses `own` scope.
+
+Example:
+
+```ts
+resourceOwnerId: "user_1"
+```
+
+If the resource does not use owner-based access, this can be omitted.
+
+### `resourceTeamId`
+
+The team id of the record.
+
+Use this when the permission uses `team` scope.
+
+Example:
+
+```ts
+resourceTeamId: "team_west"
+```
+
+If the resource does not use team-based access, this can be omitted.
+
+### `resourceData`
+
+Extra resource data used for conditional rules.
+
+Example:
+
+```ts
+resourceData: {
+  id: "inv_1",
+  status: "locked"
+}
+```
+
+Use this when a condition needs record fields beyond owner or team.
+
+## Decision Shape
+
+The returned decision looks like:
+
+```ts
+{
+  allowed: true,
+  reason: "Access allowed.",
+  matchedScopes: ["team"]
+}
+```
+
+Fields:
+
+- `allowed`: final allow/deny result
+- `reason`: explanation of the result
+- `matchedScopes`: scopes that matched the request
+
+## Validation
+
+The engine validates role configuration when it is created.
+
+It throws when:
+
+- a role inherits from a missing role
 - role inheritance is circular
 
-This helps catch configuration problems early instead of failing silently during authorization checks.
+## Middleware Adapter
 
-## Express Adapter
+The package also exports:
 
-The package also exposes `requirePermission` as an adapter helper for request middleware use cases.
+- `requirePermission`
 
-For integration details, see `docs/middleware-integration.md`.
+This is a helper for Express-style middleware integration.
+
+See:
+
+- `docs/middleware-integration.md`
