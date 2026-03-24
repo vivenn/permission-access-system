@@ -62,6 +62,8 @@ import { createAccessControl } from "permission-access-system";
 const accessControl = createAccessControl("./rules.json");
 ```
 
+The JSON file path is resolved from the current working directory of the app process.
+
 Example `rules.json`:
 
 ```json

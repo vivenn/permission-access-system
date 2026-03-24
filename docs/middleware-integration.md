@@ -51,6 +51,14 @@ export const accessControl = createAccessControl({
 });
 ```
 
+You can also load the same engine from a JSON file:
+
+```ts
+import { createAccessControl } from "permission-access-system";
+
+export const accessControl = createAccessControl("./rules.json");
+```
+
 ## Step 2: Attach Auth Context
 
 ```ts

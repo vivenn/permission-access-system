@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   createAccessControl,
   isAllowed,
+  requirePermission,
   resolveUserPermissions
 } from "../dist/index.js";
 
@@ -53,6 +54,87 @@ test("denies team-scope access for a different team", () => {
   );
 });
 
+test("allows team-scope access for the same team", () => {
+  const accessControl = createAccessControl({
+    manager: {
+      permissions: [{ resource: "lead", action: "read", scope: "team" }]
+    }
+  });
+
+  const decision = accessControl.can({
+    user: {
+      id: "manager_1",
+      roleKeys: ["manager"],
+      teamIds: ["team_west"]
+    },
+    resource: "lead",
+    action: "read",
+    resourceTeamId: "team_west"
+  });
+
+  assert.equal(decision.allowed, true);
+  assert.deepEqual(decision.matchedScopes, ["team"]);
+});
+
+test("denies own-scope access for a different owner", () => {
+  const accessControl = createAccessControl({
+    author: {
+      permissions: [{ resource: "article", action: "update", scope: "own" }]
+    }
+  });
+
+  const decision = accessControl.can({
+    user: {
+      id: "user_1",
+      roleKeys: ["author"]
+    },
+    resource: "article",
+    action: "update",
+    resourceOwnerId: "user_2"
+  });
+
+  assert.equal(decision.allowed, false);
+});
+
+test("denies own-scope access when resourceOwnerId is missing", () => {
+  const accessControl = createAccessControl({
+    author: {
+      permissions: [{ resource: "article", action: "read", scope: "own" }]
+    }
+  });
+
+  const decision = accessControl.can({
+    user: {
+      id: "user_1",
+      roleKeys: ["author"]
+    },
+    resource: "article",
+    action: "read"
+  });
+
+  assert.equal(decision.allowed, false);
+});
+
+test("denies team-scope access when resourceTeamId is missing", () => {
+  const accessControl = createAccessControl({
+    manager: {
+      permissions: [{ resource: "lead", action: "read", scope: "team" }]
+    }
+  });
+
+  const decision = accessControl.can({
+    user: {
+      id: "manager_1",
+      roleKeys: ["manager"],
+      teamIds: ["team_west"]
+    },
+    resource: "lead",
+    action: "read"
+  });
+
+  assert.equal(decision.allowed, false);
+});
+
 test("explicit deny overrides allow when the condition matches", () => {
   const decision = isAllowed(
     [
@@ -83,6 +165,26 @@ test("explicit deny overrides allow when the condition matches", () => {
   assert.equal(decision.reason, "Access denied by an explicit deny rule.");
 });
 
+test("allows any-scope access through createAccessControl.can", () => {
+  const accessControl = createAccessControl({
+    admin: {
+      permissions: [{ resource: "report", action: "read", scope: "any" }]
+    }
+  });
+
+  const decision = accessControl.can({
+    user: {
+      id: "admin_1",
+      roleKeys: ["admin"]
+    },
+    resource: "report",
+    action: "read"
+  });
+
+  assert.equal(decision.allowed, true);
+  assert.deepEqual(decision.matchedScopes, ["any"]);
+});
+
 test("inherits permissions from parent roles", () => {
   const permissions = resolveUserPermissions(
     {
@@ -95,6 +197,22 @@ test("inherits permissions from parent roles", () => {
       }
     },
     ["editor"]
+  );
+
+  assert.equal(permissions.length, 2);
+});
+
+test("resolves permissions from multiple roles", () => {
+  const permissions = resolveUserPermissions(
+    {
+      viewer: {
+        permissions: [{ resource: "lead", action: "read", scope: "any" }]
+      },
+      editor: {
+        permissions: [{ resource: "lead", action: "update", scope: "own" }]
+      }
+    },
+    ["viewer", "editor"]
   );
 
   assert.equal(permissions.length, 2);
@@ -169,4 +287,255 @@ test("json declarative conditions deny locked invoices", () => {
 
   assert.equal(decision.allowed, false);
   assert.equal(decision.reason, "Access denied by an explicit deny rule.");
+});
+
+test("throws when json rules file does not exist", () => {
+  assert.throws(
+    () => createAccessControl("./test/fixtures/does-not-exist.json"),
+    /ENOENT/
+  );
+});
+
+test("throws when json rules file contains invalid json", () => {
+  assert.throws(
+    () =>
+      createAccessControl(
+        new URL("./fixtures/malformed-rules.json", import.meta.url).pathname
+      ),
+    /SyntaxError|Expected ',' or '}'/
+  );
+});
+
+test("supports object-based deny conditions for not-equals behavior", () => {
+  const accessControl = createAccessControl({
+    billing_admin: {
+      permissions: [
+        { resource: "invoice", action: "refund", scope: "any" },
+        {
+          resource: "invoice",
+          action: "refund",
+          scope: "any",
+          effect: "deny",
+          condition: ({ resource }) => resource?.status !== "open"
+        }
+      ]
+    }
+  });
+
+  const openDecision = accessControl.can({
+    user: {
+      id: "finance_1",
+      roleKeys: ["billing_admin"]
+    },
+    resource: "invoice",
+    action: "refund",
+    resourceData: {
+      status: "open"
+    }
+  });
+
+  const closedDecision = accessControl.can({
+    user: {
+      id: "finance_1",
+      roleKeys: ["billing_admin"]
+    },
+    resource: "invoice",
+    action: "refund",
+    resourceData: {
+      status: "closed"
+    }
+  });
+
+  assert.equal(openDecision.allowed, true);
+  assert.equal(closedDecision.allowed, false);
+});
+
+test("supports object-based deny conditions for list and existence checks", () => {
+  const accessControl = createAccessControl({
+    finance: {
+      permissions: [
+        { resource: "invoice", action: "archive", scope: "any" },
+        {
+          resource: "invoice",
+          action: "archive",
+          scope: "any",
+          effect: "deny",
+          condition: ({ resource }) =>
+            ["locked", "paid"].includes(resource?.status)
+        }
+      ]
+    },
+    reviewer: {
+      permissions: [
+        { resource: "document", action: "read", scope: "any" },
+        {
+          resource: "document",
+          action: "read",
+          scope: "any",
+          effect: "deny",
+          condition: ({ resource }) => !resource?.reviewedAt
+        }
+      ]
+    }
+  });
+
+  const archiveDenied = accessControl.can({
+    user: {
+      id: "finance_1",
+      roleKeys: ["finance"]
+    },
+    resource: "invoice",
+    action: "archive",
+    resourceData: {
+      status: "locked"
+    }
+  });
+
+  const archiveAllowed = accessControl.can({
+    user: {
+      id: "finance_1",
+      roleKeys: ["finance"]
+    },
+    resource: "invoice",
+    action: "archive",
+    resourceData: {
+      status: "draft"
+    }
+  });
+
+  const readDenied = accessControl.can({
+    user: {
+      id: "reviewer_1",
+      roleKeys: ["reviewer"]
+    },
+    resource: "document",
+    action: "read",
+    resourceData: {}
+  });
+
+  const readAllowed = accessControl.can({
+    user: {
+      id: "reviewer_1",
+      roleKeys: ["reviewer"]
+    },
+    resource: "document",
+    action: "read",
+    resourceData: {
+      reviewedAt: "2026-03-24T12:00:00.000Z"
+    }
+  });
+
+  assert.equal(archiveDenied.allowed, false);
+  assert.equal(archiveAllowed.allowed, true);
+  assert.equal(readDenied.allowed, false);
+  assert.equal(readAllowed.allowed, true);
+});
+
+test("middleware returns 401 when auth context is missing", () => {
+  const accessControl = createAccessControl({
+    admin: {
+      permissions: [{ resource: "user", action: "manage", scope: "any" }]
+    }
+  });
+
+  const middleware = requirePermission(accessControl, "user", "manage");
+  let responsePayload;
+  let nextCalled = false;
+
+  middleware(
+    {},
+    {
+      status(code) {
+        return {
+          json(body) {
+            responsePayload = { code, body };
+          }
+        };
+      }
+    },
+    () => {
+      nextCalled = true;
+    }
+  );
+
+  assert.equal(nextCalled, false);
+  assert.equal(responsePayload.code, 401);
+  assert.equal(responsePayload.body.error.code, "UNAUTHORIZED");
+});
+
+test("middleware returns 403 when permission check fails", () => {
+  const accessControl = createAccessControl({
+    sales_rep: {
+      permissions: [{ resource: "lead", action: "read", scope: "own" }]
+    }
+  });
+
+  const middleware = requirePermission(accessControl, "lead", "read");
+  let responsePayload;
+  let nextCalled = false;
+
+  middleware(
+    {
+      auth: {
+        userId: "user_1",
+        roles: ["sales_rep"]
+      },
+      record: {
+        ownerId: "user_2"
+      }
+    },
+    {
+      status(code) {
+        return {
+          json(body) {
+            responsePayload = { code, body };
+          }
+        };
+      }
+    },
+    () => {
+      nextCalled = true;
+    }
+  );
+
+  assert.equal(nextCalled, false);
+  assert.equal(responsePayload.code, 403);
+  assert.equal(responsePayload.body.error.code, "FORBIDDEN");
+});
+
+test("middleware calls next when permission check passes", () => {
+  const accessControl = createAccessControl({
+    manager: {
+      permissions: [{ resource: "lead", action: "read", scope: "team" }]
+    }
+  });
+
+  const middleware = requirePermission(accessControl, "lead", "read");
+  let nextCalled = false;
+
+  middleware(
+    {
+      auth: {
+        userId: "manager_1",
+        roles: ["manager"],
+        teamIds: ["team_west"]
+      },
+      record: {
+        ownerId: "rep_1",
+        teamId: "team_west"
+      }
+    },
+    {
+      status() {
+        return {
+          json() {}
+        };
+      }
+    },
+    () => {
+      nextCalled = true;
+    }
+  );
+
+  assert.equal(nextCalled, true);
 });

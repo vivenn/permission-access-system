@@ -28,6 +28,8 @@ import { createAccessControl } from "permission-access-system";
 const accessControl = createAccessControl("./rules.json");
 ```
 
+The file path is resolved from the current working directory of the app process.
+
 Class form:
 
 ```ts
@@ -42,6 +44,22 @@ Both give you the same engine behavior.
 
 - a role configuration object
 - a JSON file path
+
+## JSON File Shape
+
+The expected JSON file format is:
+
+```json
+{
+  "roles": {
+    "manager": {
+      "permissions": [
+        { "resource": "lead", "action": "read", "scope": "team" }
+      ]
+    }
+  }
+}
+```
 
 ## Engine Methods
 

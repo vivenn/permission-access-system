@@ -1,0 +1,12 @@
+{
+  "roles": {
+    "manager": {
+      "permissions": [
+        {
+          "resource": "lead",
+          "action": "read",
+          "scope": "team"
+        }
+      ]
+    }
+  }

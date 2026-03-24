@@ -72,6 +72,8 @@ You can also load the same engine from a JSON file:
 const accessControl = createAccessControl("./rules.json");
 ```
 
+The file path is resolved from the current working directory of the app process.
+
 Equivalent class-based form:
 
 ```ts
