@@ -27,11 +27,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/viven1426/permission-access-system.git"
+    "url": "git+https://github.com/vivenn/permission-access-system.git"
   },
-  "homepage": "https://github.com/viven1426/permission-access-system",
+  "homepage": "https://github.com/vivenn/permission-access-system",
   "bugs": {
-    "url": "https://github.com/viven1426/permission-access-system/issues"
+    "url": "https://github.com/vivenn/permission-access-system/issues"
   },
   "keywords": [
     "authorization",

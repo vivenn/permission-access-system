@@ -84,13 +84,13 @@ Example `rules.json`:
 Clone the repository:
 
 ```bash
-git clone https://github.com/viven1426/permission-access-system.git
+git clone https://github.com/vivenn/permission-access-system.git
 ```
 
 Or install directly from GitHub:
 
 ```bash
-npm install github:viven1426/permission-access-system
+npm install github:vivenn/permission-access-system
 ```
 
 ## Compatibility

@@ -431,7 +431,7 @@ test("supports object-based deny conditions for list and existence checks", () =
   assert.equal(readAllowed.allowed, true);
 });
 
-test("middleware returns 401 when auth context is missing", () => {
+test("middleware returns 401 when auth context is missing", async () => {
   const accessControl = createAccessControl({
     admin: {
       permissions: [{ resource: "user", action: "manage", scope: "any" }]
@@ -442,28 +442,84 @@ test("middleware returns 401 when auth context is missing", () => {
   let responsePayload;
   let nextCalled = false;
 
-  middleware(
-    {},
-    {
-      status(code) {
-        return {
-          json(body) {
-            responsePayload = { code, body };
-          }
-        };
+  await new Promise((resolve, reject) => {
+    middleware(
+      {},
+      {
+        status(code) {
+          return {
+            json(body) {
+              responsePayload = { code, body };
+              resolve();
+            }
+          };
+        }
+      },
+      (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        nextCalled = true;
+        resolve();
       }
-    },
-    () => {
-      nextCalled = true;
-    }
-  );
+    );
+  });
 
   assert.equal(nextCalled, false);
   assert.equal(responsePayload.code, 401);
   assert.equal(responsePayload.body.error.code, "UNAUTHORIZED");
 });
 
-test("middleware returns 403 when permission check fails", () => {
+test("middleware accepts user context from req.user", async () => {
+  const accessControl = createAccessControl({
+    manager: {
+      permissions: [{ resource: "lead", action: "read", scope: "team" }]
+    }
+  });
+
+  const middleware = requirePermission(accessControl, "lead", "read");
+  let nextCalled = false;
+
+  await new Promise((resolve, reject) => {
+    middleware(
+      {
+        user: {
+          id: "manager_1",
+          roles: ["manager"],
+          teams: ["team_west"]
+        },
+        record: {
+          ownerId: "rep_1",
+          teamId: "team_west"
+        }
+      },
+      {
+        status() {
+          return {
+            json(body) {
+              reject(new Error(`Unexpected response: ${JSON.stringify(body)}`));
+            }
+          }
+        }
+      },
+      (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        nextCalled = true;
+        resolve();
+      }
+    );
+  });
+
+  assert.equal(nextCalled, true);
+});
+
+test("middleware returns 403 when permission check fails", async () => {
   const accessControl = createAccessControl({
     sales_rep: {
       permissions: [{ resource: "lead", action: "read", scope: "own" }]
@@ -474,36 +530,45 @@ test("middleware returns 403 when permission check fails", () => {
   let responsePayload;
   let nextCalled = false;
 
-  middleware(
-    {
-      auth: {
-        userId: "user_1",
-        roles: ["sales_rep"]
+  await new Promise((resolve, reject) => {
+    middleware(
+      {
+        auth: {
+          userId: "user_1",
+          roles: ["sales_rep"]
+        },
+        record: {
+          ownerId: "user_2"
+        }
       },
-      record: {
-        ownerId: "user_2"
+      {
+        status(code) {
+          return {
+            json(body) {
+              responsePayload = { code, body };
+              resolve();
+            }
+          };
+        }
+      },
+      (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        nextCalled = true;
+        resolve();
       }
-    },
-    {
-      status(code) {
-        return {
-          json(body) {
-            responsePayload = { code, body };
-          }
-        };
-      }
-    },
-    () => {
-      nextCalled = true;
-    }
-  );
+    );
+  });
 
   assert.equal(nextCalled, false);
   assert.equal(responsePayload.code, 403);
   assert.equal(responsePayload.body.error.code, "FORBIDDEN");
 });
 
-test("middleware calls next when permission check passes", () => {
+test("middleware calls next when permission check passes", async () => {
   const accessControl = createAccessControl({
     manager: {
       permissions: [{ resource: "lead", action: "read", scope: "team" }]
@@ -513,29 +578,311 @@ test("middleware calls next when permission check passes", () => {
   const middleware = requirePermission(accessControl, "lead", "read");
   let nextCalled = false;
 
-  middleware(
-    {
-      auth: {
-        userId: "manager_1",
-        roles: ["manager"],
-        teamIds: ["team_west"]
+  await new Promise((resolve, reject) => {
+    middleware(
+      {
+        auth: {
+          userId: "manager_1",
+          roles: ["manager"],
+          teamIds: ["team_west"]
+        },
+        record: {
+          ownerId: "rep_1",
+          teamId: "team_west"
+        }
       },
-      record: {
-        ownerId: "rep_1",
-        teamId: "team_west"
+      {
+        status() {
+          return {
+            json(body) {
+              reject(new Error(`Unexpected response: ${JSON.stringify(body)}`));
+            }
+          }
+        }
+      },
+      (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        nextCalled = true;
+        resolve();
       }
-    },
-    {
-      status() {
-        return {
-          json() {}
-        };
-      }
-    },
-    () => {
-      nextCalled = true;
-    }
-  );
+    );
+  });
 
   assert.equal(nextCalled, true);
+});
+
+test("middleware can load a record before permission check", async () => {
+  const accessControl = createAccessControl({
+    manager: {
+      permissions: [{ resource: "lead", action: "read", scope: "team" }]
+    }
+  });
+
+  const req = {
+    params: {
+      id: "lead_1"
+    },
+    auth: {
+      userId: "manager_1",
+      roles: ["manager"],
+      teamIds: ["team_west"]
+    }
+  };
+
+  const middleware = requirePermission(accessControl, "lead", "read", {
+    async loadRecord(request) {
+      return {
+        id: request.params.id,
+        ownerId: "rep_1",
+        teamId: "team_west"
+      };
+    }
+  });
+
+  let nextCalled = false;
+
+  await new Promise((resolve, reject) => {
+    middleware(
+      req,
+      {
+        status() {
+          return {
+            json(body) {
+              reject(new Error(`Unexpected response: ${JSON.stringify(body)}`));
+            }
+          };
+        }
+      },
+      (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        nextCalled = true;
+        resolve();
+      }
+    );
+  });
+
+  assert.equal(nextCalled, true);
+  assert.equal(req.record.id, "lead_1");
+  assert.equal(req.record.teamId, "team_west");
+});
+
+test("middleware accepts a shorthand loadRecord callback", async () => {
+  const accessControl = createAccessControl({
+    manager: {
+      permissions: [{ resource: "lead", action: "read", scope: "team" }]
+    }
+  });
+
+  const req = {
+    params: {
+      id: "lead_1"
+    },
+    auth: {
+      userId: "manager_1",
+      roles: ["manager"],
+      teamIds: ["team_west"]
+    }
+  };
+
+  const middleware = requirePermission(
+    accessControl,
+    "lead",
+    "read",
+    async (request) => ({
+      id: request.params.id,
+      ownerId: "rep_1",
+      teamId: "team_west"
+    })
+  );
+
+  await new Promise((resolve, reject) => {
+    middleware(
+      req,
+      {
+        status() {
+          return {
+            json(body) {
+              reject(new Error(`Unexpected response: ${JSON.stringify(body)}`));
+            }
+          };
+        }
+      },
+      (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      }
+    );
+  });
+
+  assert.equal(req.record.id, "lead_1");
+});
+
+test("middleware accepts a custom getUser mapper", async () => {
+  const accessControl = createAccessControl({
+    manager: {
+      permissions: [{ resource: "lead", action: "read", scope: "team" }]
+    }
+  });
+
+  const middleware = requirePermission(accessControl, "lead", "read", {
+    getUser(req) {
+      return {
+        id: req.currentUser.uuid,
+        roleKeys: req.currentUser.permissions,
+        teamIds: req.currentUser.groupIds
+      };
+    },
+    loadRecord() {
+      return {
+        ownerId: "rep_1",
+        teamId: "team_west"
+      };
+    }
+  });
+
+  let nextCalled = false;
+
+  await new Promise((resolve, reject) => {
+    middleware(
+      {
+        currentUser: {
+          uuid: "manager_1",
+          permissions: ["manager"],
+          groupIds: ["team_west"]
+        }
+      },
+      {
+        status() {
+          return {
+            json(body) {
+              reject(new Error(`Unexpected response: ${JSON.stringify(body)}`));
+            }
+          };
+        }
+      },
+      (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        nextCalled = true;
+        resolve();
+      }
+    );
+  });
+
+  assert.equal(nextCalled, true);
+});
+
+test("middleware accepts a custom record mapper", async () => {
+  const accessControl = createAccessControl({
+    sales_rep: {
+      permissions: [{ resource: "lead", action: "read", scope: "own" }]
+    }
+  });
+
+  const middleware = requirePermission(accessControl, "lead", "read", {
+    getRecordContext(req) {
+      return {
+        resourceOwnerId: req.record?.createdBy,
+        resourceTeamId: req.record?.groupId,
+        resourceData: req.record
+      };
+    }
+  });
+
+  let nextCalled = false;
+
+  await new Promise((resolve, reject) => {
+    middleware(
+      {
+        auth: {
+          userId: "user_1",
+          roles: ["sales_rep"]
+        },
+        record: {
+          id: "lead_1",
+          createdBy: "user_1",
+          groupId: "team_west"
+        }
+      },
+      {
+        status() {
+          return {
+            json(body) {
+              reject(new Error(`Unexpected response: ${JSON.stringify(body)}`));
+            }
+          };
+        }
+      },
+      (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        nextCalled = true;
+        resolve();
+      }
+    );
+  });
+
+  assert.equal(nextCalled, true);
+});
+
+test("middleware passes loadRecord errors to next", async () => {
+  const accessControl = createAccessControl({
+    manager: {
+      permissions: [{ resource: "lead", action: "read", scope: "team" }]
+    }
+  });
+
+  const expectedError = new Error("database unavailable");
+  const middleware = requirePermission(accessControl, "lead", "read", {
+    async loadRecord() {
+      throw expectedError;
+    }
+  });
+
+  await new Promise((resolve, reject) => {
+    middleware(
+      {
+        auth: {
+          userId: "manager_1",
+          roles: ["manager"],
+          teamIds: ["team_west"]
+        }
+      },
+      {
+        status() {
+          return {
+            json(body) {
+              reject(new Error(`Unexpected response: ${JSON.stringify(body)}`));
+            }
+          };
+        }
+      },
+      (error) => {
+        try {
+          assert.equal(error, expectedError);
+          resolve();
+        } catch (assertionError) {
+          reject(assertionError);
+        }
+      }
+    );
+  });
 });

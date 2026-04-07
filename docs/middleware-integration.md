@@ -14,15 +14,21 @@ Recommended order:
 
 ## Required Request Context
 
-The built-in adapter expects:
+By default, the built-in adapter accepts either:
 
 - `req.auth.userId`
 - `req.auth.roles`
 - optional `req.auth.teamIds`
+- or `req.user.id`
+- or `req.user.userId`
+- `req.user.roles` or `req.user.roleKeys`
+- optional `req.user.teamIds` or `req.user.teams`
 - optional `req.record.ownerId`
 - optional `req.record.teamId`
 
-If your app uses a different request shape, write a custom middleware wrapper.
+If you do not want a separate preload middleware, you can pass a `loadRecord` function directly to `requirePermission(...)`.
+If your request uses a custom user shape, pass `getUser(...)` and map it yourself.
+If your record uses different field names than `ownerId` and `teamId`, pass `getRecordContext(...)`.
 
 ## Step 1: Create The Engine
 
@@ -90,6 +96,49 @@ export function loadLead(req, res, next) {
 }
 ```
 
+If you want to keep route setup shorter, move that logic into `requirePermission(...)`:
+
+```ts
+import { requirePermission } from "permission-access-system";
+
+app.get(
+  "/leads/:id",
+  requirePermission(accessControl, "lead", "read", {
+    async loadRecord(req) {
+      const lead = await leadRepository.findById(req.params?.id ?? "");
+
+      return {
+        ...lead,
+        ownerId: lead.ownerId,
+        teamId: lead.teamId
+      };
+    }
+  }),
+  handler
+);
+```
+
+`loadRecord` can be sync or async. It can either return the record object or assign `req.record` itself.
+You can pass it either as `{ loadRecord }` or directly as the fourth argument.
+
+Shorter form:
+
+```ts
+app.get(
+  "/leads/:id",
+  requirePermission(accessControl, "lead", "read", async (req) => {
+    const lead = await leadRepository.findById(req.params?.id ?? "");
+
+    return {
+      ...lead,
+      ownerId: lead.ownerId,
+      teamId: lead.teamId
+    };
+  }),
+  handler
+);
+```
+
 ## Step 4: Use The Built-In Adapter
 
 ```ts
@@ -107,6 +156,9 @@ The adapter:
 
 - builds an `AccessCheck`
 - runs `accessControl.can(...)`
+- optionally loads the record first through `loadRecord`
+- resolves user context from `req.auth`, `req.user`, or `getUser(...)`
+- resolves record ownership/team fields from `req.record` or `getRecordContext(...)`
 - returns `403` if denied
 - calls `next()` if allowed
 
@@ -153,8 +205,15 @@ app.use(attachAuth);
 
 app.get(
   "/leads/:id",
-  loadLead,
-  requirePermission(accessControl, "lead", "read"),
+  requirePermission(accessControl, "lead", "read", {
+    async loadRecord(req) {
+      return {
+        id: req.params?.id,
+        ownerId: "rep_2",
+        teamId: "team_west"
+      };
+    }
+  }),
   (req, res) => {
     res.json(req.record);
   }
@@ -168,8 +227,57 @@ Write your own wrapper when:
 - request fields use different names
 - you want a custom error response
 - you need extra check data in `resourceData`
+- you want to build the full `AccessCheck` manually
 
-Example:
+Custom user mapping example:
+
+```ts
+app.get(
+  "/leads/:id",
+  requirePermission(accessControl, "lead", "read", {
+    getUser(req) {
+      return {
+        id: req.session.user.uuid,
+        roleKeys: req.session.user.roles,
+        teamIds: req.session.user.teamIds
+      };
+    },
+    async loadRecord(req) {
+      const lead = await leadRepository.findById(req.params?.id ?? "");
+
+      return {
+        ...lead,
+        ownerId: lead.ownerId,
+        teamId: lead.teamId
+      };
+    }
+  }),
+  handler
+);
+```
+
+Custom record mapping example:
+
+```ts
+app.get(
+  "/leads/:id",
+  requirePermission(accessControl, "lead", "read", {
+    async loadRecord(req) {
+      return leadRepository.findById(req.params?.id ?? "");
+    },
+    getRecordContext(req) {
+      return {
+        resourceOwnerId: req.record?.createdBy,
+        resourceTeamId: req.record?.groupId,
+        resourceData: req.record
+      };
+    }
+  }),
+  handler
+);
+```
+
+Full custom middleware example:
 
 ```ts
 export function requireLeadUpdate(accessControl) {

@@ -7,13 +7,13 @@ This guide shows the fastest way to set up and use `permission-access-system` in
 Clone the repository:
 
 ```bash
-git clone https://github.com/viven1426/permission-access-system.git
+git clone https://github.com/vivenn/permission-access-system.git
 ```
 
 Or install from GitHub:
 
 ```bash
-npm install github:viven1426/permission-access-system
+npm install github:vivenn/permission-access-system
 ```
 
 ## 2. Import The Package
@@ -140,7 +140,7 @@ Use `team` when the resource belongs to a team.
 
 ## 7. Use It In Middleware
 
-If your app is request-based, integrate it in middleware after authentication and after loading the target record.
+If your app is request-based, integrate it in middleware after authentication. The adapter can read user context from `req.auth` or `req.user`, and it can load the target record inside the permission middleware itself.
 
 Built-in adapter:
 
@@ -154,8 +154,36 @@ const accessControl = createAccessControl(roleConfig);
 
 app.get(
   "/leads/:id",
-  loadLead,
-  requirePermission(accessControl, "lead", "read"),
+  requirePermission(accessControl, "lead", "read", async (req) => {
+    const lead = await leadRepository.findById(req.params?.id ?? "");
+
+    return {
+      ...lead,
+      ownerId: lead.ownerId,
+      teamId: lead.teamId
+    };
+  }),
+  handler
+);
+```
+
+If your record shape is different, map it explicitly:
+
+```ts
+app.get(
+  "/leads/:id",
+  requirePermission(accessControl, "lead", "read", {
+    async loadRecord(req) {
+      return leadRepository.findById(req.params?.id ?? "");
+    },
+    getRecordContext(req) {
+      return {
+        resourceOwnerId: req.record?.createdBy,
+        resourceTeamId: req.record?.groupId,
+        resourceData: req.record
+      };
+    }
+  }),
   handler
 );
 ```

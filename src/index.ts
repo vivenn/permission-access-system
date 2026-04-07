@@ -10,6 +10,16 @@ export { resolveUserPermissions } from "./core/resolver.js";
 export { requirePermission } from "./adapters/express.js";
 
 export type {
+  PermissionAuthShape,
+  PermissionRecordContext,
+  PermissionRecordLoader,
+  PermissionRecordShape,
+  PermissionRequestShape,
+  PermissionUserShape,
+  RequirePermissionOptions
+} from "./adapters/express.js";
+
+export type {
   AccessCheck,
   AccessControl,
   AccessControlConfigInput,
